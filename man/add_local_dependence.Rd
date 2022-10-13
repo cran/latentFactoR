@@ -2,7 +2,7 @@
 % Please edit documentation in R/add_local_dependence.R
 \name{add_local_dependence}
 \alias{add_local_dependence}
-\title{Adds Local Dependence to Factor Model Data}
+\title{Adds Local Dependence to \code{\link[latentFactoR]{simulate_factors}} Data}
 \usage{
 add_local_dependence(
   lf_object,
@@ -44,7 +44,8 @@ or each factor. Accepts number of locally dependent values as well}
 
 \item{proportion_LD_range}{Numeric (length = 2).
 Range of proportion of variables that are randomly selected from
-a random uniform distribution. Accepts number of locally dependent values as well}
+a random uniform distribution. Accepts number of locally dependent values as well.
+Defaults to \code{NULL}}
 
 \item{add_residuals}{Numeric (length = 1, \code{factors}, or total number of locally dependent variables).
 Amount of residual to add to the population correlation matrix between two variables.
@@ -55,7 +56,8 @@ General effect sizes range from small (0.20), moderate (0.30), to large (0.40)}
 
 \item{add_residuals_range}{Numeric (length = 2).
 Range of the residuals to add to the correlation matrix are randomly selected from
-a random uniform distribution}
+a random uniform distribution.
+Defaults to \code{NULL}}
 
 \item{allow_multiple}{Boolean.
 Whether a variable should be allowed to be locally dependent with
@@ -66,10 +68,6 @@ Set to \code{TRUE} for more complex locally dependence patterns}
 \value{
 Returns a list containing:
 
-\item{correlated_residuals}{A data frame with the first two columns specifying
-the variables that are locally dependent and the third column specifying the
-magnitude of the added residual for each locally dependent pair}
-
 \item{data}{Simulated data from the specified factor model}
 
 \item{population_correlation}{Population correlation matrix with local dependence added}
@@ -77,32 +75,11 @@ magnitude of the added residual for each locally dependent pair}
 \item{original_correlation}{Original population correlation matrix \emph{before}
 local dependence was added}
 
-\item{parameters}{
-A list containing the parameters used to generate the data:
+\item{correlated_residuals}{A data frame with the first two columns specifying
+the variables that are locally dependent and the third column specifying the
+magnitude of the added residual for each locally dependent pair}
 
-\itemize{
-
-\item{\code{factors}}
-{Number of factors}
-
-\item{\code{variables}}
-{Variables on each factor}
-
-\item{\code{loadings}}
-{Loading matrix}
-
-\item{\code{factor_correlations}}
-{Correlations between factors}
-
-\item{\code{categories}}
-{Categories for each variable}
-
-\item{\code{skew}}
-{Skew for each variable}
-
-}
-
-}
+\item{original_results}{Original \code{lf_object} input into function}
 }
 \description{
 Adds local dependence to simulated data from \code{\link[latentFactoR]{simulate_factors}}. 
@@ -153,8 +130,8 @@ two_factor_LD <- add_local_dependence(
 
 }
 \references{
-Christensen, A. P., Garrido, L. E., & Golino, H. (2022). \cr
-Unique variable analysis: A network psychometrics method to detect local dependence. \cr
+Christensen, A. P., Garrido, L. E., & Golino, H. (2022).
+Unique variable analysis: A network psychometrics method to detect local dependence.
 \emph{PsyArXiv}
 }
 \author{

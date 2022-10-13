@@ -1,4 +1,4 @@
-#' Adds Local Dependence to Factor Model Data
+#' Adds Local Dependence to \code{\link[latentFactoR]{simulate_factors}} Data
 #'
 #' Adds local dependence to simulated data from \code{\link[latentFactoR]{simulate_factors}}. 
 #' See examples to get started
@@ -32,7 +32,8 @@
 #' 
 #' @param proportion_LD_range Numeric (length = 2).
 #' Range of proportion of variables that are randomly selected from
-#' a random uniform distribution. Accepts number of locally dependent values as well
+#' a random uniform distribution. Accepts number of locally dependent values as well.
+#' Defaults to \code{NULL}
 #' 
 #' @param add_residuals Numeric (length = 1, \code{factors}, or total number of locally dependent variables).
 #' Amount of residual to add to the population correlation matrix between two variables.
@@ -43,7 +44,8 @@
 #' 
 #' @param add_residuals_range Numeric (length = 2).
 #' Range of the residuals to add to the correlation matrix are randomly selected from
-#' a random uniform distribution
+#' a random uniform distribution.
+#' Defaults to \code{NULL}
 #' 
 #' @param allow_multiple Boolean.
 #' Whether a variable should be allowed to be locally dependent with
@@ -53,10 +55,6 @@
 #' 
 #' @return Returns a list containing:
 #' 
-#' \item{correlated_residuals}{A data frame with the first two columns specifying
-#' the variables that are locally dependent and the third column specifying the
-#' magnitude of the added residual for each locally dependent pair}
-#' 
 #' \item{data}{Simulated data from the specified factor model}
 #' 
 #' \item{population_correlation}{Population correlation matrix with local dependence added}
@@ -64,32 +62,11 @@
 #' \item{original_correlation}{Original population correlation matrix \emph{before}
 #' local dependence was added}
 #' 
-#' \item{parameters}{
-#' A list containing the parameters used to generate the data:
+#' \item{correlated_residuals}{A data frame with the first two columns specifying
+#' the variables that are locally dependent and the third column specifying the
+#' magnitude of the added residual for each locally dependent pair}
 #' 
-#' \itemize{
-#' 
-#' \item{\code{factors}}
-#' {Number of factors}
-#' 
-#' \item{\code{variables}}
-#' {Variables on each factor}
-#' 
-#' \item{\code{loadings}}
-#' {Loading matrix}
-#' 
-#' \item{\code{factor_correlations}}
-#' {Correlations between factors}
-#' 
-#' \item{\code{categories}}
-#' {Categories for each variable}
-#' 
-#' \item{\code{skew}}
-#' {Skew for each variable}
-#' 
-#' }
-#' 
-#' } 
+#' \item{original_results}{Original \code{lf_object} input into function} 
 #'
 #' @examples
 #' # Generate factor data
@@ -140,14 +117,14 @@
 #' Luis Eduardo Garrido <luisgarrido@pucmm.edu>
 #' 
 #' @references
-#' Christensen, A. P., Garrido, L. E., & Golino, H. (2022). \cr
-#' Unique variable analysis: A network psychometrics method to detect local dependence. \cr
+#' Christensen, A. P., Garrido, L. E., & Golino, H. (2022).
+#' Unique variable analysis: A network psychometrics method to detect local dependence.
 #' \emph{PsyArXiv}
 #'
 #' @export
 #'
 # Add local dependence to simulated data
-# Updated 05.09.2022
+# Updated 07.10.2022
 add_local_dependence <- function(
     lf_object,
     method = c(
@@ -162,15 +139,30 @@ add_local_dependence <- function(
 {
   
   # Check for appropriate class
-  if(!is(lf_object, "lf-simulate")){
+  if(!is(lf_object, "lf_simulate")){
     
     # Produce error
     stop(
       paste(
-        "`lf_object` input is not class \"lf-simulate\" from the `simulate_factors` function.",
+        "`lf_object` input is not class \"lf_simulate\" from the `simulate_factors` function.",
         "\n\nInput class(es) of current `lf_object`:", 
         paste0("\"", class(lf_object), "\"", collapse = ", "),
         "\n\nUse `simulate_factors` to generate your data to input into this function"
+      )
+    )
+    
+  }
+  
+  # Check that population error has not yet been added
+  if(is(lf_object, "lf_pe")){
+    
+    # Produce error
+    stop(
+      paste(
+        "`lf_object` input is class \"lf_pe\" from the `add_population_error` function.",
+        "Population error must be added after any local dependence to ensure proper simulation.",
+        "\n\nUse `simulate_factors` to generate your data to input into this function first,",
+        "then use this output in the `add_population_error` function."
       )
     )
     
@@ -260,7 +252,7 @@ add_local_dependence <- function(
   }
   
   # Add class
-  class(results) <- c("lf-simulate", "lf-ld")
+  class(results) <- c(class(lf_object), "lf_ld")
   
   # Return results
   return(results)
