@@ -786,7 +786,7 @@ yuan <- function(R, lambda, Phi, Psi,
 
 #' @noRd
 # Adds correlated residuals to generated data
-# Updated 01.10.2022
+# Updated 01.11.2022
 correlate_residuals <- function(
     lf_object,
     proportion_LD, allow_multiple = FALSE,
@@ -815,7 +815,10 @@ correlate_residuals <- function(
   # If variables cannot have multiple local dependencies,
   # then number of local dependencies needs to be cut in half (per factor)
   if(!isTRUE(allow_multiple)){
-    variables_LD <- floor(variables_LD / 2) 
+    variables_LD <- ifelse(
+      variables_LD == 1, variables_LD,
+      floor(variables_LD / 2) 
+    )
   }
   
   # Check for add residual range
@@ -919,16 +922,19 @@ correlate_residuals <- function(
       for(i in 1:nrow(correlated_residuals)){
         
         # Add residuals to correlation matrix
-        original_correlation[
+        population_correlation[
           correlated_residuals[i,1],
           correlated_residuals[i,2]
-        ] <- add_residuals[i]
+        ] <- original_correlation[
+          correlated_residuals[i,1],
+          correlated_residuals[i,2]
+        ] + add_residuals[i]
         
         # Ensure symmetric
-        original_correlation[
+        population_correlation[
           correlated_residuals[i,2],
           correlated_residuals[i,1]
-        ] <- original_correlation[
+        ] <- population_correlation[
           correlated_residuals[i,1],
           correlated_residuals[i,2]
         ]
@@ -1562,7 +1568,7 @@ range_error <- function(input, expected_ranges){
 #
 #' @noRd
 # Generates skewed data for continuous data
-# Updated 09.08.2022
+# Updated 22.11.2022
 skew_continuous <- function(
     skewness,
     data = NULL,
@@ -1571,8 +1577,18 @@ skew_continuous <- function(
 )
 {
   
-  # Original skewness
-  original_skewness <- skewness
+  # Check for zero skew (skip adding skew)
+  if(skewness == 0){
+    return(data)
+  }
+  
+  # Obtain absolute skewness
+  if(sign(skewness) == -1){
+    skewness <- abs(skewness)
+    flip <- TRUE
+  }else{
+    flip <- FALSE
+  }
   
   # Generate data
   if(is.null(data)){
@@ -1582,33 +1598,77 @@ skew_continuous <- function(
   # Kurtosis
   kurtosis <- 1
   
-  # Skew data
-  skew_data <- sinh(
-    kurtosis * (asinh(data) + skewness) 
+  # Initialize increments
+  increments <- 0.01
+  
+  # Seek along a range of skews
+  skew_values <- seq(
+    -2, 2, increments
   )
   
-  # Observed skew in data
-  observed_skew <- psych::skew(skew_data)
-  
-  # Minimize difference
-  while(abs(observed_skew - original_skewness) > tolerance){
-    
-    # Obtain difference
-    difference <- observed_skew - original_skewness
-    
-    # Decrease skewness
-    # Negative values increase
-    # Positive values decrease
-    skewness <- skewness - difference
-    
+  # Compute skews
+  skews <- unlist(lapply(skew_values, function(x){
     # Skew data
     skew_data <- sinh(
-      kurtosis * (asinh(data) + skewness) 
+      kurtosis * (asinh(data) + x) 
     )
     
     # Observed skew in data
-    observed_skew <- psych::skew(skew_data)
+    psych::skew(skew_data)
+  }))
+  
+  # Compute minimum index
+  minimum <- which.min(abs(skewness - skews))
+  
+  # Check for whether skewness is found
+  while(abs(skewness - skews[minimum]) > tolerance){
     
+    # Check for minimum value
+    if(minimum == 1){
+      kurtosis <- kurtosis - 0.1
+    }else if(minimum == length(skews)){
+      kurtosis <- kurtosis + 0.1
+    }else{
+      
+      # Decrease increments
+      increments <- 0.01 * 0.1
+      
+      # Seek along a range of skews
+      skew_values <- seq(
+        skew_values[minimum - 1],
+        skew_values[minimum + 1],
+        length.out = 100
+      )
+
+    }
+    
+    # Compute skews
+    skews <- unlist(lapply(skew_values, function(x){
+      # Skew data
+      skew_data <- sinh(
+        kurtosis * (asinh(data) + x) 
+      )
+      
+      # Observed skew in data
+      psych::skew(skew_data)
+    }))
+    
+    # Compute minimum index
+    minimum <- which.min(abs(skewness - skews))
+    
+  }
+  
+  # Compute final skew data
+  skew_data <- sinh(
+    kurtosis * (asinh(data) + skew_values[minimum]) 
+  )
+  
+  # Re-scale
+  skew_data <- scale(skew_data)
+  
+  # Flip skew?
+  if(isTRUE(flip)){
+    skew_data <- -skew_data
   }
   
   # Return skewed data

@@ -179,7 +179,7 @@
 #' @export
 #'
 # Main factor simulation function
-# Updated 05.09.2022
+# Updated 22.11.2022
 simulate_factors <- function(
   factors,
   variables, variables_range = NULL,
@@ -208,7 +208,7 @@ simulate_factors <- function(
   if(!is.null(cross_loadings_range)){
     type_error(cross_loadings_range, "numeric") # object type error
     length_error(cross_loadings_range, 2) # object length error
-    range_error(cross_loadings_range, c(0, 1)) # object range error
+    range_error(cross_loadings_range, c(-1, 1)) # object range error
     cross_loadings <- runif(
       factors,
       min = min(cross_loadings_range),
@@ -363,13 +363,24 @@ simulate_factors <- function(
             # Ignore dominant factor
             if(i != j){
               
-              loading_matrix[
-                start_variables[j]:end_variables[j], i # cross-loadings
-              ] <- rnorm(
-                variables[j],
-                mean = 0,
-                cross_loadings[j]
-              )
+              # Check for range of cross-loadings
+              if(!is.null(cross_loadings_range)){
+                loading_matrix[
+                  start_variables[j]:end_variables[j], i # cross-loadings
+                ] <- runif(
+                  variables[j],
+                  min = min(cross_loadings_range),
+                  max = max(cross_loadings_range)
+                )
+              }else{
+                loading_matrix[
+                  start_variables[j]:end_variables[j], i # cross-loadings
+                ] <- rnorm(
+                  variables[j],
+                  mean = 0,
+                  cross_loadings[j]
+                )
+              }
               
             }
             
@@ -442,24 +453,46 @@ simulate_factors <- function(
   
   }
   
-  # Find categories
-  if(any(variable_categories <= categorical_limit)){
-    
-    # Target columns to categorize
-    columns <- which(variable_categories <= categorical_limit)
+  # Set skew/categories
+  ## Target columns to categorize and/or add skew
+  categorize_columns <- which(variable_categories <= categorical_limit)
+  continuous_columns <- setdiff(1:ncol(data), categorize_columns)
+  
+  ## Check for categories
+  if(length(categorize_columns) != 0){
     
     # Set skew
-    if(length(skew) != length(columns)){
-      skew <- sample(skew, length(columns), replace = TRUE)
+    if(length(skew) != ncol(data)){
+      skew <- sample(skew, length(categorize_columns), replace = TRUE)
     }
     
     # Loop through columns
-    for(i in columns){
+    for(i in categorize_columns){
       
       data[,i] <- categorize(
         data = data[,i],
         categories = variable_categories[i],
         skew_value = skew[i]
+      )
+      
+    }
+    
+  }
+  
+  ## Check for continuous
+  if(length(continuous_columns) != 0){
+    
+    # Set skew
+    if(length(skew) != ncol(data)){
+      skew <- sample(skew, length(continuous_columns), replace = TRUE)
+    }
+    
+    # Loop through columns
+    for(i in continuous_columns){
+      
+      data[,i] <- skew_continuous( # function in `utils-latentFactoR`
+        skewness = skew[i],
+        data = data[,i]
       )
       
     }
