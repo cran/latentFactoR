@@ -10,7 +10,7 @@ NEST(
   iterations = 1000,
   maximum_iterations = 500,
   alpha = 0.05,
-  convergence = 1e-05
+  convergence = 0.00001
 )
 }
 \arguments{
@@ -37,7 +37,7 @@ Significance level for determine sufficient eigenvalues.
 Defaults to \code{0.05}}
 
 \item{convergence}{Numeric (length = 1).
-Value necessary to be less than or equal to 
+Value necessary to be less than or equal to
 when establishing convergence of eigenvalues}
 }
 \value{
@@ -78,8 +78,8 @@ exploratory factor analysis.
 \emph{The Quantitative Methods for Psychology}, \emph{13}(1), 64–74.
 
 Brandenburg, N., & Papenberg, M. (2022).
-Reassessment of innovative methods to determine the number 
-of factors: A simulation-Based comparison of Exploratory 
+Reassessment of innovative methods to determine the number
+of factors: A simulation-Based comparison of Exploratory
 Graph Analysis and Next Eigenvalue Sufficiency Test.
 \emph{Psychological Methods}.
 }

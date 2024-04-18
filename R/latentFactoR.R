@@ -24,7 +24,6 @@
 #' Hudson Golino <hfg9s@virginia.edu>,
 #' Luis Eduardo Garrido <luisgarrido@pucmm.edu>
 #' 
-#' 
 #' @importFrom utils packageDescription
 #'
 "_PACKAGE"

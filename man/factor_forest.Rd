@@ -4,7 +4,12 @@
 \alias{factor_forest}
 \title{Estimate Number of Dimensions using Factor Forest}
 \usage{
-factor_forest(data, sample_size, maximum_factors = 8)
+factor_forest(
+  data,
+  sample_size,
+  maximum_factors = 8,
+  PA_correlation = c("cor", "poly", "tet")
+)
 }
 \arguments{
 \item{data}{Matrix or data frame.
@@ -19,6 +24,20 @@ then specifying the sample size is required}
 \item{maximum_factors}{Numeric (length = 1).
 Maximum number of factors to search over.
 Defaults to \code{8}}
+
+\item{PA_correlation}{Character (length = 1).
+Type of correlation used in \code{\link[psych]{fa.parallel}}.
+Must be set:
+
+\itemize{
+
+\item \code{"cor"} --- Pearson's correlation
+
+\item \code{"poly"} --- Polychoric correlation
+
+\item \code{"tet"} --- Tetrachoric correlation
+
+}}
 }
 \value{
 Returns a list containing:
@@ -64,7 +83,7 @@ in exploratory factor analysis.
 # Authors of Factor Forest \cr
 David Goretzko and Markus Buhner
 
-# Authors of {latentFactoR} \cr
+# Authors of \{latentFactoR\} \cr
 Alexander P. Christensen <alexpaulchristensen@gmail.com>,
 Hudson Golino <hfg9s@virginia.edu>,
 Luis Eduardo Garrido <luisgarrido@pucmm.edu>

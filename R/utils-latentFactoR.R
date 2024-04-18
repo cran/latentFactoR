@@ -44,23 +44,15 @@ model_CFA <- function(variables, loadings)
 
 #' @noRd
 # Standardized Root Mean Resdiual
-# Updated 28.09.2022
+# Updated 24.11.2022
 srmr <- function(population, error)
 {
   
   # Obtain lower triangles
-  population_lower <- population[lower.tri(population)]
-  error_lower <- error[lower.tri(error)]
-  
-  # Compute SRMR
-  SRMR <- sqrt(
-    mean(
-      (population_lower - error_lower)^2
-    )
-  )
+  lower_triangle <- lower.tri(population)
   
   # Return SRMR
-  return(SRMR)
+  return(sqrt(mean((population[lower_triangle] - error[lower_triangle])^2)))
   
 }
 
@@ -260,7 +252,7 @@ gURhat <- function(p) {
 #' @noRd
 #' @importFrom stats lm
 # Adds population error using Cudeck method to generated data
-# Updated 13.10.2022 -- Marcos
+# Updated 05.12.2023 -- Marcos
 cudeck <- function(R, lambda, Phi, Psi,
                    fit = "rmsr", misfit = "close",
                    method = "minres") {
@@ -324,7 +316,7 @@ cudeck <- function(R, lambda, Phi, Psi,
   # Generate random error:
   
   m <- p+1
-  U <- replicate(p, stats::runif(m, 0, 1))
+  U <- replicate(p, stats::runif(m, -1, 1)) # sample from -1 to 1 (changed from 0 to -1 on 05.12.2023)
   A1 <- t(U) %*% U
   sq <- diag(1/sqrt(diag(A1)))
   A2 <- sq %*% A1 %*% sq
@@ -786,7 +778,7 @@ yuan <- function(R, lambda, Phi, Psi,
 
 #' @noRd
 # Adds correlated residuals to generated data
-# Updated 01.11.2022
+# Updated 22.01.2022
 correlate_residuals <- function(
     lf_object,
     proportion_LD, allow_multiple = FALSE,
@@ -860,9 +852,31 @@ correlate_residuals <- function(
     # Loop through factors and add local dependence
     for(f in 1:factors){
       
+      # Determine available variables
+      available_variables <- start_variables[f]:end_variables[f]
+      
+      # Check for cross-loading class
+      if(is(lf_object, "lf_cl")){
+        
+        # Obtain loadings for available variables (ensure matrix)
+        available_loadings <- matrix(
+          loadings[available_variables, -f],
+          ncol = factors - 1
+        )
+        
+        # Collect sum of cross-loadings
+        sum_cross_loadings <- rowSums(available_loadings)
+        
+        # Remove variables with non-zero cross-loadings
+        available_variables <- available_variables[
+          sum_cross_loadings == 0
+        ]
+        
+      }
+      
       # Item rows
       item_rows <- sample(
-        start_variables[f]:end_variables[f],
+        available_variables,
         variables_LD[f],
         replace = allow_multiple
       )
@@ -871,13 +885,13 @@ correlate_residuals <- function(
       if(isTRUE(allow_multiple)){
         
         # Do not remove variables
-        remaining_variables <- start_variables[f]:end_variables[f]
+        remaining_variables <- available_variables
         
       }else{
         
         # Remove already included variables
         remaining_variables <- setdiff(
-          start_variables[f]:end_variables[f], item_rows
+          available_variables, item_rows
         )
         
       }
@@ -894,6 +908,30 @@ correlate_residuals <- function(
         correlated_residuals,
         cbind(item_rows, item_columns)
       )
+      
+      # Obtain same variable rows
+      same_variable_rows <- which(
+        correlated_residuals[,"item_rows"] ==
+          correlated_residuals[,"item_columns"]
+      )
+      
+      # Replace until there are no duplicate rows
+      while(any(same_variable_rows)){
+        
+        # Replace second column with new variable
+        correlated_residuals[same_variable_rows, 2] <- sample(
+          remaining_variables,
+          length(same_variable_rows),
+          replace = allow_multiple
+        )
+        
+        # Re-check for duplicate rows
+        same_variable_rows <- which(
+          correlated_residuals[,"item_rows"] ==
+            correlated_residuals[,"item_columns"]
+        )
+        
+      }
       
       # Obtain duplicate rows
       duplicate_rows <- match_row(correlated_residuals)
@@ -915,34 +953,16 @@ correlate_residuals <- function(
       
     }
     
-    # Obtain amount residual to add
-    if(length(add_residuals) == length(variables_LD)){
-      
-      # Loop through correlated_residuals
-      for(i in 1:nrow(correlated_residuals)){
-        
-        # Add residuals to correlation matrix
-        population_correlation[
-          correlated_residuals[i,1],
-          correlated_residuals[i,2]
-        ] <- original_correlation[
-          correlated_residuals[i,1],
-          correlated_residuals[i,2]
-        ] + add_residuals[i]
-        
-        # Ensure symmetric
-        population_correlation[
-          correlated_residuals[i,2],
-          correlated_residuals[i,1]
-        ] <- population_correlation[
-          correlated_residuals[i,1],
-          correlated_residuals[i,2]
-        ]
-        
-      }
-      
-      
-    }else{
+    # Add column for residual
+    correlated_residuals <- cbind(
+      correlated_residuals, rep(0, nrow(correlated_residuals))
+    )
+    
+    # Add column name for residual
+    colnames(correlated_residuals)[3] <- "residual_correlation"
+    
+    # Loop through correlated residuals
+    if(nrow(correlated_residuals) != 0){
       
       # Check if add residuals length equals 1 or number of factors
       if(length(add_residuals) != sum(variables_LD)){
@@ -967,12 +987,16 @@ correlate_residuals <- function(
         # Loop through correlated residuals
         for(i in 1:nrow(correlated_residuals)){
           
-          # Compute random residual
-          random_residual <- runif(
-            1,
-            min = add_residuals[i] - 0.05,
-            max = add_residuals[i] + 0.05
-          )
+          # Insert or compute random residual
+          if(!is.null(add_residuals_range)){
+            random_residual <- add_residuals[i]
+          }else{
+            random_residual <- runif(
+              1,
+              min = add_residuals[i] - 0.05,
+              max = add_residuals[i] + 0.05
+            )
+          }
           
           # Obtain sign
           original_sign <- sign(original_correlation[
@@ -997,6 +1021,10 @@ correlate_residuals <- function(
             correlated_residuals[i,1],
             correlated_residuals[i,2]
           ]
+          
+          # Add random residual to output
+          correlated_residuals[i,"residual_correlation"] <-
+            random_residual * original_sign
           
         }
         
@@ -1042,24 +1070,166 @@ correlate_residuals <- function(
     
   }
   
-  # Find categories
-  if(any(variable_categories <= categorical_limit)){
+  # Set skew/categories
+  ## Target columns to categorize and/or add skew
+  categorize_columns <- which(variable_categories <= categorical_limit)
+  continuous_columns <- setdiff(1:ncol(data), categorize_columns)
+  
+  # Ensure skew is in the appropriate direction for correlated residuals
+  if(nrow(correlated_residuals) != 0){
     
-    # Target columns to categorize
-    columns <- which(variable_categories <= categorical_limit)
+    # 1. Obtain loading signs
+    signs <- numeric(nrow(loadings))
+    
+    # Ensure proper signs for skew
+    for(i in 1:ncol(loadings)){
+      
+      # Target dominant loadings
+      target_loadings <- start_variables[i]:end_variables[i]
+      
+      # Determine sign
+      signs[target_loadings] <- sign(loadings[target_loadings, i])
+      
+    }
+    
+    # 2. Obtain correlated residual chains
+    
+    # Obtain residual variables
+    residual_variables <- correlated_residuals[,c(
+      "item_rows", "item_columns"
+    )]
+    
+    # Ensure matrix
+    if(!is.matrix(residual_variables)){
+      residual_variables <- t(as.matrix(residual_variables))
+    }
+    
+    # Initialize residual chain list
+    residual_chain <- vector("list", nrow(residual_variables))
+    
+    # Create residual chain
+    while(nrow(residual_variables) != 0){
+      
+      # Determine if either variable exists in residual chain
+      combine_residuals <- unlist(
+        lapply(residual_chain, function(x){
+          
+          if(any(residual_variables[1,] %in% x)){
+            return(TRUE)
+          }else{
+            return(FALSE)
+          }
+          
+        })
+      )
+      
+      # Check for whether to combine
+      if(!any(combine_residuals)){
+        
+        # Find NULL lists
+        null_list <- unlist(lapply(residual_chain, is.null))
+        
+        # First NULL list
+        residual_chain[[which(null_list)[1]]] <-
+          unique(as.vector(residual_variables[1,]))
+        
+      }else if(sum(combine_residuals) == 1){
+        
+        # Find residual chain to add to
+        add_to_chain <- which(combine_residuals)
+        
+        # Add variables to chain
+        residual_chain[[add_to_chain]] <- unique( # keep unique
+          c(
+            residual_chain[[add_to_chain]], # existing chain
+            as.vector(residual_variables[1,]) # new to add
+          )
+        )
+        
+      }else{
+        
+        # Find residual chains to merge
+        merge_chains <- which(combine_residuals)
+        
+        # Merge into first merge
+        residual_chain[[merge_chains[1]]] <- unique(unlist(residual_chain[merge_chains]))
+        
+        # Add to first merge chain
+        residual_chain[[merge_chains[1]]] <- unique( # keep unique
+          c(
+            residual_chain[[merge_chains[1]]], # existing chain
+            as.vector(residual_variables[1,]) # new to add
+          )
+        )
+        
+        # Set second merge chain to NULL
+        residual_chain[[merge_chains[2]]] <- NULL
+        
+      }
+      
+      # Remove residual variables from consideration
+      residual_variables <- matrix(residual_variables[-1,], ncol = 2)
+      
+    }
+    
+    # Find NULL lists
+    null_list <- unlist(lapply(residual_chain, is.null))
+    
+    # Keep non-NULL chains
+    residual_chain <- residual_chain[!null_list]
+    
+    # Ensure skew in the same direction
+    for(i in seq_along(residual_chain)){
+      
+      # Handle skew
+      skew[residual_chain[[i]]] <- handle_skew_signs(
+        skews = skew[residual_chain[[i]]],
+        signs = signs[residual_chain[[i]]]
+      )
+      
+    }
+    
+  }
+  
+  ## Check for categories
+  if(length(categorize_columns) != 0){
     
     # Set skew
-    if(length(skew) != length(columns)){
-      skew <- sample(skew, length(columns), replace = TRUE)
+    if(length(skew) == 1){
+      skew <- rep(skew, length(categorize_columns))
+    }else if(length(skew) != ncol(data)){
+      skew <- sample(skew, length(categorize_columns), replace = TRUE)
     }
     
     # Loop through columns
-    for(i in columns){
+    for(i in categorize_columns){
       
       data[,i] <- categorize(
         data = data[,i],
         categories = variable_categories[i],
         skew_value = skew[i]
+      )
+      
+    }
+    
+  }
+  
+  ## Check for continuous
+  if(length(continuous_columns) != 0){
+    
+    # Set skew
+    if(length(skew) == 1){
+      skew <- rep(skew, length(continuous_columns))
+    }else if(length(skew) != ncol(data)){
+      skew <- sample(skew, length(continuous_columns), replace = TRUE)
+    }
+    
+    # Loop through columns
+    for(i in continuous_columns){
+      
+      data[,i] <- skew_continuous( # function in `utils-latentFactoR`
+        skewness = skew[i],
+        data = data[,i]
       )
       
     }
@@ -1075,24 +1245,372 @@ correlate_residuals <- function(
     )
   )
   
-  # Update correlated residuals
-  correlated_residuals_df <- data.frame(
-    V1 = correlated_residuals[,1],
-    V2 = correlated_residuals[,2],
-    added_residual = add_residuals
-  )
+  # Update skews
+  parameters$skew <- skew
   
   # Populate results
   results <- list(
     data = data,
     population_correlation = population_correlation,
     parameters = parameters,
-    correlated_residuals = correlated_residuals_df,
+    correlated_residuals = as.data.frame(correlated_residuals),
     original_results = lf_object
   )
   
   # Return results
   return(results)
+  
+}
+
+#%%%%%%%%%%%%%%%%
+# categorize ----
+#%%%%%%%%%%%%%%%%
+
+#' @noRd
+# Ensures skew is in an appropriate direction based on loadings
+# Updated 12.12.2022
+handle_skew_signs <- function(skews, signs){
+  
+  # Check if all skew signs are in the same direction
+  if(all(sign(skews) == -1)){ # All in negative direction
+    
+    # Make all skew for negative variables positive
+    skews[signs == -1] <- abs(skews[signs == -1])
+    
+  }else if(all(sign(skews) == 1)){ # All in negative direction
+    
+    # Make all skew for positive variables negative
+    skews[signs == 1] <- -abs(skews[signs == 1])
+    
+  }else{ 
+    
+    # If mixed, base signs on mode of positive variables
+    # with preference for negative skew (i.e., ties go to negative skew)
+    
+    # Obtain skew signs for positive variables
+    positive_skew_signs <- sign(skews[signs == 1])
+    
+    # Determine whether mode with ties going to negative skew
+    if(
+      sum(positive_skew_signs == -1) >=
+      sum(positive_skew_signs == 1)
+    ){
+      
+      # Make all skew for positive variables negative
+      skews[signs == 1] <- -abs(skews[signs == 1])
+      
+      # Make all skew for negative variables positive
+      skews[signs == -1] <- abs(skews[signs == -1])
+      
+    }else{ # Do positive skew for positive variables
+      
+      # Make all skew for positive variables positive
+      skews[signs == 1] <- abs(skews[signs == 1])
+      
+      # Make all skew for negative variables negative
+      skews[signs == -1] <- -abs(skews[signs == -1])
+      
+    }
+    
+  }
+  
+  # Return skews
+  return(skews)
+  
+}
+
+#' @noRd
+# Adds skew to a single variable based on threshold (skew) values
+# Updated 30.11.2022
+skew_single_variable <- function(data, skew_values){
+  
+  # Categorize biased data with updated thresholds
+  for(i in (length(skew_values) + 1):1){
+    
+    # First category
+    if(i == 1){
+      data[data < skew_values[i]] <- i
+    }else if(i == length(skew_values) + 1){ # Last category
+      data[data >= skew_values[i-1]] <- i
+    }else{ # Middle category
+      data[data >= skew_values[i-1] & data < skew_values[i]] <- i
+    }
+    
+  }
+  
+  # Return skewed data
+  return(data)
+  
+}
+
+# Based on 
+# Garrido, L. E., Abad, F. J., & Ponsoda, V. (2011).
+# Performance of Velicer’s minimum average partial factor retention
+# method with categorical variables.
+# Educational and Psychological Measurement, 71(3), 551-570.
+# https://doi.org/10.1177/0013164410389489
+#
+#' @noRd
+# Generates skewed data for continuous data
+# Updated 22.11.2022
+skew_continuous <- function(
+    skewness,
+    data = NULL,
+    sample_size = 1000000,
+    tolerance = 0.00001
+)
+{
+  
+  # Check for zero skew (skip adding skew)
+  if(skewness == 0){
+    return(data)
+  }
+  
+  # Obtain absolute skewness
+  if(sign(skewness) == -1){
+    skewness <- abs(skewness)
+    flip <- TRUE
+  }else{
+    flip <- FALSE
+  }
+  
+  # Generate data
+  if(is.null(data)){
+    data <- rnorm(sample_size)
+  }
+  
+  # Kurtosis
+  kurtosis <- 1
+  
+  # Initialize increments
+  increments <- 0.01
+  
+  # Seek along a range of skews
+  skew_values <- seq(
+    -2, 2, increments
+  )
+  
+  # Compute skews
+  skews <- unlist(lapply(skew_values, function(x){
+    # Skew data
+    skew_data <- sinh(
+      kurtosis * (asinh(data) + x) 
+    )
+    
+    # Observed skew in data
+    psych::skew(skew_data)
+  }))
+  
+  # Compute minimum index
+  minimum <- which.min(abs(skewness - skews))
+  
+  # Check for whether skewness is found
+  while(abs(skewness - skews[minimum]) > tolerance){
+    
+    # Check for minimum value
+    if(minimum == 1){
+      kurtosis <- kurtosis - 0.1
+    }else if(minimum == length(skews)){
+      kurtosis <- kurtosis + 0.1
+    }else{
+      
+      # Decrease increments
+      increments <- 0.01 * 0.1
+      
+      # Seek along a range of skews
+      skew_values <- seq(
+        skew_values[minimum - 1],
+        skew_values[minimum + 1],
+        length.out = 100
+      )
+      
+    }
+    
+    # Compute skews
+    skews <- unlist(lapply(skew_values, function(x){
+      # Skew data
+      skew_data <- sinh(
+        kurtosis * (asinh(data) + x) 
+      )
+      
+      # Observed skew in data
+      psych::skew(skew_data)
+    }))
+    
+    # Compute minimum index
+    minimum <- which.min(abs(skewness - skews))
+    
+  }
+  
+  # Compute final skew data
+  skew_data <- sinh(
+    kurtosis * (asinh(data) + skew_values[minimum]) 
+  )
+  
+  # Re-scale
+  skew_data <- scale(skew_data)
+  
+  # Flip skew?
+  if(isTRUE(flip)){
+    skew_data <- -skew_data
+  }
+  
+  # Return skewed data
+  return(skew_data)
+  
+}
+
+# Based on 
+# Garrido, L. E., Abad, F. J., & Ponsoda, V. (2011).
+# Performance of Velicer’s minimum average partial factor retention
+# method with categorical variables.
+# Educational and Psychological Measurement, 71(3), 551-570.
+# https://doi.org/10.1177/0013164410389489
+#
+#' @noRd
+# Generates skew
+# Updated 09.08.2022
+skew_generator <- function(
+    skewness, categories,
+    reduction_factor = 0.75,
+    sample_size = 1000000,
+    initial_proportion = 0.50,
+    tolerance = 0.00001
+)
+{
+  
+  # Initialize skew matrix
+  skew_matrix <- matrix(
+    0, nrow = categories, ncol = categories
+  )
+  
+  # Initialize cases
+  cases <- numeric(sample_size)
+  
+  # Loop through categories
+  for(i in 2:categories){
+    
+    # Initialize (largest category) proportion
+    proportion <- initial_proportion
+    
+    # Current proportion for rest of categories
+    remaining_proportion <- 1 - proportion
+    
+    # Initialize categories allocations
+    allocation <- 1
+    allocation_1 <- 1
+    
+    # Loop through with reduction factor
+    if(i > 2){
+      for(j in 1:(i-2)){
+        allocation_1 <- allocation_1 * reduction_factor
+        allocation <- allocation + allocation_1
+      }
+    }
+    
+    # Divide remaining proportion by allocations
+    divided_proportion <- remaining_proportion / allocation
+    
+    # Undefined objects
+    propinf <- 1 / sample_size
+    propsup <- initial_proportion
+    E <- divided_proportion / reduction_factor
+    
+    # Loop through
+    for(j in 1:i){
+      cases[round(sample_size * propinf):round(sample_size * propsup)] <- j
+      E <- E * reduction_factor
+      propinf <- propsup
+      propsup <- propinf + E
+    }
+    
+    # Compute skewness
+    skew_actual <- psych::skew(cases)
+    
+    # Limits
+    limitsup <- 1
+    limitsinf <- 0
+    
+    # Ensure skew within tolerance
+    while(abs(skew_actual - skewness) > tolerance){
+      
+      # Skew greater than
+      if(skew_actual < skewness){
+        limitinf <- proportion
+        proportion <- (proportion + limitsup) / 2
+      }else{
+        limitsup <- proportion
+        proportion <- (proportion + limitsinf) / 2
+      }
+      
+      # Update
+      # Current proportion for rest of categories
+      remaining_proportion <- 1 - proportion
+      
+      # Divide remaining proportion by allocations
+      divided_proportion <- remaining_proportion / allocation
+      
+      # Undefined objects
+      propinf <- 1 / sample_size
+      propsup <- proportion
+      E <- divided_proportion / reduction_factor
+      
+      # Loop through
+      for(j in 1:i){
+        cases[round(sample_size * propinf):round(sample_size * propsup)] <- j
+        E <- E * reduction_factor
+        propinf <- propsup
+        propsup <- propinf + E
+      }
+      
+      # Compute skewness
+      skew_actual <- psych::skew(cases)
+      
+    }
+    
+    # Set E
+    E <- divided_proportion / reduction_factor
+    cumulative_probability <- proportion
+    
+    # Update matrix
+    for(j in 1:i){
+      
+      skew_matrix[i,j] <- cumulative_probability
+      E <- E * reduction_factor
+      cumulative_probability <- cumulative_probability + E
+      
+    }
+    
+  }
+  
+  # Normal inverse
+  norm_inv_matrix <- qnorm(skew_matrix)
+  
+  # Set infinite values to zero
+  norm_inv_matrix[is.infinite(norm_inv_matrix)] <- 0
+  
+  # Category probability
+  category_probability <- matrix(
+    0, nrow = categories, ncol = categories
+  )
+  
+  # Fill first column
+  category_probability[,1] <- skew_matrix[,1]
+  
+  # Loop through
+  for(i in 2:categories){
+    category_probability[,i] <- skew_matrix[,i] - skew_matrix[,i-1]
+  }
+  
+  # Make -1 = 0
+  category_probability[category_probability == -1] <- 0
+  
+  # Return skew
+  result <- list(
+    skew_matrix = norm_inv_matrix,
+    probability = category_probability
+  )
+  return(result)
   
 }
 
@@ -1555,281 +2073,6 @@ range_error <- function(input, expected_ranges){
 
 }
 
-#%%%%%%%%%%%%%%%%%%%%%%%%%%
-# GENERATION FUNCTIONS ----
-#%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-# Based on 
-# Garrido, L. E., Abad, F. J., & Ponsoda, V. (2011).
-# Performance of Velicer’s minimum average partial factor retention
-# method with categorical variables.
-# Educational and Psychological Measurement, 71(3), 551-570.
-# https://doi.org/10.1177/0013164410389489
-#
-#' @noRd
-# Generates skewed data for continuous data
-# Updated 22.11.2022
-skew_continuous <- function(
-    skewness,
-    data = NULL,
-    sample_size = 1000000,
-    tolerance = 0.00001
-)
-{
-  
-  # Check for zero skew (skip adding skew)
-  if(skewness == 0){
-    return(data)
-  }
-  
-  # Obtain absolute skewness
-  if(sign(skewness) == -1){
-    skewness <- abs(skewness)
-    flip <- TRUE
-  }else{
-    flip <- FALSE
-  }
-  
-  # Generate data
-  if(is.null(data)){
-    data <- rnorm(sample_size)
-  }
-  
-  # Kurtosis
-  kurtosis <- 1
-  
-  # Initialize increments
-  increments <- 0.01
-  
-  # Seek along a range of skews
-  skew_values <- seq(
-    -2, 2, increments
-  )
-  
-  # Compute skews
-  skews <- unlist(lapply(skew_values, function(x){
-    # Skew data
-    skew_data <- sinh(
-      kurtosis * (asinh(data) + x) 
-    )
-    
-    # Observed skew in data
-    psych::skew(skew_data)
-  }))
-  
-  # Compute minimum index
-  minimum <- which.min(abs(skewness - skews))
-  
-  # Check for whether skewness is found
-  while(abs(skewness - skews[minimum]) > tolerance){
-    
-    # Check for minimum value
-    if(minimum == 1){
-      kurtosis <- kurtosis - 0.1
-    }else if(minimum == length(skews)){
-      kurtosis <- kurtosis + 0.1
-    }else{
-      
-      # Decrease increments
-      increments <- 0.01 * 0.1
-      
-      # Seek along a range of skews
-      skew_values <- seq(
-        skew_values[minimum - 1],
-        skew_values[minimum + 1],
-        length.out = 100
-      )
-
-    }
-    
-    # Compute skews
-    skews <- unlist(lapply(skew_values, function(x){
-      # Skew data
-      skew_data <- sinh(
-        kurtosis * (asinh(data) + x) 
-      )
-      
-      # Observed skew in data
-      psych::skew(skew_data)
-    }))
-    
-    # Compute minimum index
-    minimum <- which.min(abs(skewness - skews))
-    
-  }
-  
-  # Compute final skew data
-  skew_data <- sinh(
-    kurtosis * (asinh(data) + skew_values[minimum]) 
-  )
-  
-  # Re-scale
-  skew_data <- scale(skew_data)
-  
-  # Flip skew?
-  if(isTRUE(flip)){
-    skew_data <- -skew_data
-  }
-  
-  # Return skewed data
-  return(skew_data)
-  
-}
-
-# Based on 
-# Garrido, L. E., Abad, F. J., & Ponsoda, V. (2011).
-# Performance of Velicer’s minimum average partial factor retention
-# method with categorical variables.
-# Educational and Psychological Measurement, 71(3), 551-570.
-# https://doi.org/10.1177/0013164410389489
-#
-#' @noRd
-# Generates skew
-# Updated 09.08.2022
-skew_generator <- function(
-    skewness, categories,
-    reduction_factor = 0.75,
-    sample_size = 1000000,
-    initial_proportion = 0.50,
-    tolerance = 0.00001
-)
-{
-  
-  # Initialize skew matrix
-  skew_matrix <- matrix(
-    0, nrow = categories, ncol = categories
-  )
-  
-  # Initialize cases
-  cases <- numeric(sample_size)
-  
-  # Loop through categories
-  for(i in 2:categories){
-    
-    # Initialize (largest category) proportion
-    proportion <- initial_proportion
-    
-    # Current proportion for rest of categories
-    remaining_proportion <- 1 - proportion
-    
-    # Initialize categories allocations
-    allocation <- 1
-    allocation_1 <- 1
-    
-    # Loop through with reduction factor
-    if(i > 2){
-      for(j in 1:(i-2)){
-        allocation_1 <- allocation_1 * reduction_factor
-        allocation <- allocation + allocation_1
-      }
-    }
-    
-    # Divide remaining proportion by allocations
-    divided_proportion <- remaining_proportion / allocation
-    
-    # Undefined objects
-    propinf <- 1 / sample_size
-    propsup <- initial_proportion
-    E <- divided_proportion / reduction_factor
-    
-    # Loop through
-    for(j in 1:i){
-      cases[round(sample_size * propinf):round(sample_size * propsup)] <- j
-      E <- E * reduction_factor
-      propinf <- propsup
-      propsup <- propinf + E
-    }
-    
-    # Compute skewness
-    skew_actual <- psych::skew(cases)
-    
-    # Limits
-    limitsup <- 1
-    limitsinf <- 0
-    
-    # Ensure skew within tolerance
-    while(abs(skew_actual - skewness) > tolerance){
-      
-      # Skew greater than
-      if(skew_actual < skewness){
-        limitinf <- proportion
-        proportion <- (proportion + limitsup) / 2
-      }else{
-        limitsup <- proportion
-        proportion <- (proportion + limitsinf) / 2
-      }
-      
-      # Update
-      # Current proportion for rest of categories
-      remaining_proportion <- 1 - proportion
-      
-      # Divide remaining proportion by allocations
-      divided_proportion <- remaining_proportion / allocation
-      
-      # Undefined objects
-      propinf <- 1 / sample_size
-      propsup <- proportion
-      E <- divided_proportion / reduction_factor
-      
-      # Loop through
-      for(j in 1:i){
-        cases[round(sample_size * propinf):round(sample_size * propsup)] <- j
-        E <- E * reduction_factor
-        propinf <- propsup
-        propsup <- propinf + E
-      }
-      
-      # Compute skewness
-      skew_actual <- psych::skew(cases)
-      
-    }
-    
-    # Set E
-    E <- divided_proportion / reduction_factor
-    cumulative_probability <- proportion
-    
-    # Update matrix
-    for(j in 1:i){
-      
-      skew_matrix[i,j] <- cumulative_probability
-      E <- E * reduction_factor
-      cumulative_probability <- cumulative_probability + E
-      
-    }
-    
-  }
-  
-  # Normal inverse
-  norm_inv_matrix <- qnorm(skew_matrix)
-  
-  # Set infinite values to zero
-  norm_inv_matrix[is.infinite(norm_inv_matrix)] <- 0
-  
-  # Category probability
-  category_probability <- matrix(
-    0, nrow = categories, ncol = categories
-  )
-  
-  # Fill first column
-  category_probability[,1] <- skew_matrix[,1]
-  
-  # Loop through
-  for(i in 2:categories){
-    category_probability[,i] <- skew_matrix[,i] - skew_matrix[,i-1]
-  }
-  
-  # Make -1 = 0
-  category_probability[category_probability == -1] <- 0
-  
-  # Return skew
-  result <- list(
-    skew_matrix = norm_inv_matrix,
-    probability = category_probability
-  )
-  return(result)
-  
-}
-
 #%%%%%%%%%%%%%%%%%%%%%%
 # SYSTEM FUNCTIONS ----
 #%%%%%%%%%%%%%%%%%%%%%%
@@ -2080,6 +2323,30 @@ textsymbol <- function(symbol = c("alpha", "beta", "chi", "delta",
 #%%%%%%%%%%%%%%%%%%%%%%%
 
 #' @noRd
+# Ensures column names to data
+# Updated 02.12.2022
+ensure_column_names <- function(data)
+{
+  
+  # Check for whether column names exist
+  if(is.null(colnames(data))){
+    
+    # Add column names
+    colnames(data) <- paste0(
+      "V", formatC(
+        1:ncol(data), digits = floor(log10(ncol(data))),
+        format = "d", flag = "0"
+      )
+    )
+    
+  }
+  
+  # Return data
+  return(data)
+
+}
+
+#' @noRd
 # Checks for duplicated rows
 # Updated 05.09.2022
 match_row <- function(data)
@@ -2094,6 +2361,85 @@ match_row <- function(data)
   return(which(dupe_ind))
   
   
+  
+}
+
+#' @noRd
+# Function update default arguments
+# Updated 12.12.2022
+update_defaults <- function(FUN, FUN_args)
+{
+  
+  # Exploratory Graph Analysis
+  if(FUN == "EGA"){
+    
+    # Defaults
+    defaults <- list(
+      corr = "cor_auto", uni.method = "louvain",
+      model = "glasso", consensus.method = "most_common",
+      plot.EGA = FALSE
+    )
+    
+  }
+  
+  # Factor Forest
+  if(FUN == "FF"){
+    
+    # Defaults
+    defaults <- list(
+      maximum_factors = 8,
+      PA_correlation = "cor"
+    )
+    
+  }
+  
+  # Out-of-sample Factor Analysis
+  if(FUN == "FSPE"){
+    
+    # Defaults
+    defaults <- list(
+      maxK = 8, rep = 1, method = "PE", pbar = FALSE
+    )
+    
+  }
+  
+  # Next Eigenvalue Sufficiency Test
+  if(FUN == "NEST"){
+    
+    # Defaults
+    defaults <- list(
+      iterations = 1000,
+      maximum_iterations = 500,
+      alpha = 0.05,
+      convergence = 0.00001
+    )
+    
+  }
+  
+  # Parallel Analysis
+  if(FUN == "PA"){
+    
+    # Defaults
+    defaults <- list(
+      fm = "minres", fa = "both", cor = "cor",
+      n.iter = 20, sim = FALSE, plot = FALSE
+    )
+    
+  }
+  
+  # Check for any function arguments
+  if(any(names(FUN_args) %in% names(defaults))){
+    
+    # Obtain indices
+    args_index <- which(names(FUN_args) %in% names(defaults))
+    
+    # Replace arguments
+    defaults[names(FUN_args)[args_index]] <- FUN_args[args_index]
+    
+  }
+  
+  # Return arguments
+  return(defaults)
   
 }
 
