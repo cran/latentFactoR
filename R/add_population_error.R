@@ -7,7 +7,7 @@
 #'
 #' @param cfa_method Character (length = 1).
 #' Method to generate population error.
-#' Defaults to \code{"minres"}.
+#' Defaults to \code{"ml"}.
 #' Available options:
 #'
 #' \itemize{
@@ -145,7 +145,7 @@
 #' )
 #'
 #' @author
-#' {\code{\link{bifactor}}} authors \cr
+#' {\code{bifactor}} authors \cr
 #' Marcos Jimenez,
 #' Francisco J. Abad,
 #' Eduardo Garcia-Garzon,
@@ -169,7 +169,7 @@
 #' @export
 #'
 # Add population error to simulated data
-# Updated 18.04.2024
+# Updated 03.11.2025
 add_population_error <- function(
     lf_object,
     cfa_method = c("minres", "ml"),
@@ -202,7 +202,7 @@ add_population_error <- function(
 
   # Check for missing CFA method
   if(missing(cfa_method)){
-    cfa_method <- "minres"
+    cfa_method <- "ml"
   }else{cfa_method <- tolower(match.arg(cfa_method))}
 
   # Check for missing fit
@@ -434,6 +434,37 @@ add_population_error <- function(
 
         }
 
+      }else if(
+        any(
+          eigen(
+            x = population_error$R_error,
+            symmetric = TRUE,
+            only.values = TRUE
+          )$values < .Machine$double.eps
+        )
+      ){
+
+        # Increase positive definite stuck count
+        pd_stuck_count <- pd_stuck_count + 1
+
+        # Check if a break is necessary
+        if(pd_stuck_count >= convergence_iterations){
+
+          # Stop and tell user to increase convergence iterations
+          stop(
+            paste(
+              "Convergence counter has exceeded its limit.",
+              "There were issues converging the model with proper",
+              "population error. \n\n",
+              "Population error could not converge with a positive",
+              "definite matrix. \n\n",
+              "Try increasing the number of iterations for convergence",
+              "using the `convergence_iterations` argument."
+            )
+          )
+
+        }
+
       }else{
 
         # Set positive definite to be TRUE
@@ -475,15 +506,12 @@ add_population_error <- function(
     max_abs_res <- max(abs(cfa$residuals))
 
     # Cutoff for the maximum absolute residual
-    if(is.character(misfit)){
-      max_res <- switch(
-        misfit,
-        "close" = 0.10,
-        "acceptable" = 0.15
-      )
-    }else{
-      max_res <- misfit
-    }
+    max_res <- switch(
+      as.character(misfit),
+      "close" = 0.10,
+      "acceptable" = 0.15,
+      as.numeric(misfit) + 0.05
+    )
 
     # Ensure same order of loadings
     error_loadings <- cfa$lambda
@@ -558,7 +586,6 @@ add_population_error <- function(
     }
 
   }
-
 
   # Re-estimate data
   ## Cholesky decomposition
@@ -645,6 +672,7 @@ add_population_error <- function(
     delta = population_error$delta,
     misfit = population_error$misfit,
     loadings = error_loadings,
+    MAX_residual = max_abs_res,
     SRMR_difference = SRMR_difference,
     MAE_loadings = MAE
   )

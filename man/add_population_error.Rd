@@ -20,7 +20,7 @@ add_population_error(
 
 \item{cfa_method}{Character (length = 1).
 Method to generate population error.
-Defaults to \code{"minres"}.
+Defaults to \code{"ml"}.
 Available options:
 
 \itemize{
@@ -169,7 +169,7 @@ Constructing a covariance matrix that yields a specified minimizer and a specifi
 \emph{Psychometrika}, \emph{57}, 357–369.
 }
 \author{
-{\code{\link{bifactor}}} authors \cr
+{\code{bifactor}} authors \cr
 Marcos Jimenez,
 Francisco J. Abad,
 Eduardo Garcia-Garzon,
