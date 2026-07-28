@@ -169,7 +169,7 @@
 #' @export
 #'
 # Add population error to simulated data
-# Updated 03.11.2025
+# Updated 12.07.2026
 add_population_error <- function(
     lf_object,
     cfa_method = c("minres", "ml"),
@@ -181,24 +181,6 @@ add_population_error <- function(
     leave_cross_loadings = FALSE
 )
 {
-
-  # Check for appropriate class
-  if(!is(lf_object, "lf_simulate")){
-
-    # Produce error
-    stop(
-      paste(
-        "`lf_object` input is not class \"lf_simulate\" from the `simulate_factors` function.",
-        "\n\nInput class(es) of current `lf_object`:",
-        paste0("\"", class(lf_object), "\"", collapse = ", "),
-        "\n\nUse `simulate_factors` to generate your data to input into this function"
-      )
-    )
-
-  }
-
-  # Obtain parameters from simulated data
-  parameters <- lf_object$parameters
 
   # Check for missing CFA method
   if(missing(cfa_method)){
@@ -220,8 +202,8 @@ add_population_error <- function(
     error_method <- "cudeck"
   }else{error_method <- tolower(match.arg(error_method))}
 
-  # Check for appropriate misfit
-  length_error(misfit, 1);
+  # Check inputs
+  parameters <- add_population_error_errors(lf_object, misfit)
 
   # Obtain loadings
   loadings <- parameters$loadings
@@ -247,11 +229,12 @@ add_population_error <- function(
   if(!isTRUE(leave_cross_loadings)){
 
     # Set sequence of variables for each factor
-    end_variables <- cumsum(parameters$variables)
-    start_variables <- (end_variables + 1) - parameters$variables
+    variable_sequence <- factor_variable_sequence(parameters$variables)
+    start_variables <- variable_sequence$start
+    end_variables <- variable_sequence$end
 
     # Loop through loadings
-    for(i in 1:ncol(loadings)){
+    for(i in seq_len(ncol(loadings))){
 
       # Set cross-loadings to zero
       loadings[
@@ -263,84 +246,10 @@ add_population_error <- function(
 
   }else if(is(lf_object, "lf_cl")){
 
-    # Set factor correlations
-    factor_correlations <- parameters$factor_correlations
-
-    # Check communalities
-    communalities <- diag(
-      loadings %*%
-        factor_correlations %*%
-        t(loadings)
+    # Decrease dominant loadings until communalities are below threshold
+    loadings <- decrease_loadings_for_communalities(
+      loadings, parameters$factor_correlations, threshold = 0.80
     )
-
-    # Initialize break count
-    break_count <- 0
-
-    # Loop through until all communalities < 0.80
-    while(any(communalities >= 0.80)){
-
-      # Increase break count
-      break_count <- break_count + 1
-
-      # Message about adjustment
-      if(break_count == 1){
-
-        message(
-          paste(
-            "Communalities for the following variable(s) were >= 0.80:",
-            paste0(
-              which(communalities >= 0.80),
-              collapse = ", "
-            ),
-            "\nThe dominant loadings on these variable(s) were decreased",
-            "incrementally by 0.01 until their communalities were < 0.80"
-          )
-        )
-
-      }
-
-      # Identify loadings with communalities greater than 0.90
-      target_loadings <- matrix(
-        loadings[which(communalities >= 0.80),],
-        ncol = ncol(loadings),
-        byrow = FALSE
-      )
-
-      # Decrease maximum loadings by 0.01
-      replace_loadings <- matrix(
-        apply(target_loadings, 1, function(x){
-
-          # Obtain signs
-          signs <- sign(x)
-
-          # Compute absolute max
-          x <- abs(x)
-
-          # Decrease by 0.01
-          x[which.max(x)] <- x[which.max(x)] - 0.01
-
-          # Add back signs
-          x <- x * signs
-
-          # Return loadings
-          return(x)
-
-        }),
-        ncol = ncol(loadings),
-        byrow = TRUE
-      )
-
-      # Replace loadings
-      loadings[which(communalities >= 0.80),] <- replace_loadings
-
-      # Check communalities
-      communalities <- diag(
-        loadings %*%
-          factor_correlations %*%
-          t(loadings)
-      )
-
-    }
 
   }
 
@@ -371,6 +280,11 @@ add_population_error <- function(
 
   # Ensure proper convergence
   while(!convergence){
+
+    # Reset positive definite so a new population error
+    # is drawn on every outer iteration (rather than reusing
+    # the first draw and never resampling)
+    positive_definite <- FALSE
 
     # Try to get positive definite matrix
     while(!positive_definite){
@@ -435,13 +349,7 @@ add_population_error <- function(
         }
 
       }else if(
-        any(
-          eigen(
-            x = population_error$R_error,
-            symmetric = TRUE,
-            only.values = TRUE
-          )$values < .Machine$double.eps
-        )
+        any(matrix_eigenvalues(population_error$R_error) < .Machine$double.eps)
       ){
 
         # Increase positive definite stuck count
@@ -478,7 +386,9 @@ add_population_error <- function(
     error_correlation <- population_error$R_error
 
     # Add row and column names to population error correlation matrix
-    colnames(error_correlation) <- paste0("V", 1:ncol(error_correlation))
+    colnames(error_correlation) <- paste0(
+      "V", format_integer(seq_len(ncol(error_correlation)), digits(ncol(error_correlation)) - 1)
+    )
     row.names(error_correlation) <- colnames(error_correlation)
 
     # Specify the CFA model
@@ -518,16 +428,22 @@ add_population_error <- function(
 
     # Sometimes the loadings can be in opposite directions
     # Check that...
-    # Get signs
+    # Sign indeterminacy is per-factor (a single factor's loadings
+    # can be estimated as a whole with reflected sign), so each
+    # factor (column) must be checked and flipped independently
     error_signs <- sign(error_loadings)
     loading_signs <- sign(loadings)
-    if(any(error_signs != loading_signs)){
+    for(factor_i in seq_len(ncol(loadings))){
 
-      # Get non-zero signs
-      non_zero <- error_signs != 0
+      if(any(error_signs[,factor_i] != loading_signs[,factor_i])){
 
-      # Flip signs
-      error_loadings[non_zero] <- -error_loadings[non_zero]
+        # Get non-zero signs
+        non_zero <- error_signs[,factor_i] != 0
+
+        # Flip signs
+        error_loadings[non_zero, factor_i] <- -error_loadings[non_zero, factor_i]
+
+      }
 
     }
 
@@ -616,14 +532,7 @@ add_population_error <- function(
   }
 
   ## Check for categories greater than categorical limit and not infinite
-  if(any(variable_categories > categorical_limit & !is.infinite(variable_categories))){
-
-    ## Make variables with categories greater than 7 (or categorical_limit) continuous
-    variable_categories[
-      variable_categories > categorical_limit & !is.infinite(variable_categories)
-    ] <- Inf
-
-  }
+  variable_categories <- mark_continuous_categories(variable_categories, categorical_limit)
 
   ## Find categories
   if(any(variable_categories <= categorical_limit)){
@@ -633,7 +542,7 @@ add_population_error <- function(
 
     ## Set skew
     if(length(skew) != length(columns)){
-      skew <- sample(skew, length(columns), replace = TRUE)
+      skew <- shuffle_replace(skew, length(columns))
     }
 
     ## Loop through columns
@@ -651,11 +560,7 @@ add_population_error <- function(
 
   ## Add column names to data
   colnames(data) <- paste0(
-    "V", formatC(
-      x = 1:total_variables,
-      digits = floor(log10(total_variables)),
-      flag = "0", format = "d"
-    )
+    "V", format_integer(seq_len(total_variables), digits(total_variables) - 1)
   )
 
   ## Populate results
@@ -699,6 +604,35 @@ add_population_error <- function(
 
   # Return results
   return(results)
+
+}
+
+# Input checking ----
+#' @noRd
+# Updated 12.07.2026
+add_population_error_errors <- function(lf_object, misfit)
+{
+
+  # Check for appropriate class
+  if(!is(lf_object, "lf_simulate")){
+
+    # Produce error
+    stop(
+      paste(
+        "`lf_object` input is not class \"lf_simulate\" from the `simulate_factors` function.",
+        "\n\nInput class(es) of current `lf_object`:",
+        paste0("\"", class(lf_object), "\"", collapse = ", "),
+        "\n\nUse `simulate_factors` to generate your data to input into this function"
+      )
+    )
+
+  }
+
+  # Check for appropriate misfit
+  length_error(misfit, 1)
+
+  # Return checked input
+  return(lf_object$parameters)
 
 }
 

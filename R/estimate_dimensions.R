@@ -69,8 +69,6 @@
 #' Hudson Golino <hfg9s@virginia.edu>,
 #' Luis Eduardo Garrido <luisgarrido@pucmm.edu>
 #'
-#' @importFrom utils capture.output
-#'
 #' @export
 #'
 # Estimate several different factor recovery methods
@@ -115,7 +113,7 @@ estimate_dimensions <- function(
   }
 
   # Obtain correlation matrix (if not already)
-  if(!isSymmetric(data)){
+  if(!is_symmetric(data)){
 
     # Compute correlations
     correlation <- EGAnet::auto.correlate(data, verbose = FALSE)
@@ -323,7 +321,7 @@ estimate_dimensions <- function(
   }
 
   ## Check for whether FSPE can be estimated
-  if(isSymmetric(data)){
+  if(is_symmetric(data)){
 
     ## FSPE
     warning("FSPE cannot be estimated. FSPE requires data rather than a correlation (symmetric) matrix")

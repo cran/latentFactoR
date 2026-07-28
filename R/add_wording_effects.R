@@ -169,12 +169,10 @@
 #' A systematic evaluation of wording effects modeling under the exploratory structural equation modeling framework.
 #' \emph{PsyArXiv}.
 #'
-#' @importFrom utils data
-#'
 #' @export
 #'
 # Add wording effects to simulated data ----
-# Updated 18.04.2024
+# Updated 12.07.2026
 add_wording_effects <- function(
     lf_object,
     method = c(
@@ -208,190 +206,21 @@ add_wording_effects <- function(
     )
   }
 
-  # Check for appropriate class
-  if(!is(lf_object, "lf_simulate")){
-
-    # Produce error
-    stop(
-      paste(
-        "`lf_object` input is not class \"lf_simulate\" from the `simulate_factors` function.",
-        "\n\nInput class(es) of current `lf_object`:",
-        paste0("\"", class(lf_object), "\"", collapse = ", "),
-        "\n\nUse `simulate_factors` to generate your data to input into this function"
-      )
-    )
-
-  }
-
-  # Ensure data is categorical
-  if(any(lf_object$parameters$categories > 6)){
-
-    # Produce error
-    stop(
-      paste(
-        "Data input into `lf_object` must all be categorical (6 categories or less).",
-        "These variables were found to be continuous:",
-        paste(which(lf_object$parameters$categories > 6), collapse = ", ")
-      )
-    )
-
-  }
-
-  # Obtain number of cases
-  sample_size <- nrow(lf_object$data)
-
-  # Ensure appropriate methods
-  type_error(proportion_biased_cases, "numeric");
-
-  # Ensure appropriate lengths
-  length_error(proportion_biased_cases, 1);
-
-  # Convert biased cases to proportions
-  if(proportion_biased_cases > 1){
-    proportion_biased_cases <- proportion_biased_cases / sample_size
-  }
-
-  # Ensure appropriate ranges
-  range_error(proportion_biased_cases, c(0, 1));
-
-  # Obtain sample size
-  biased_sample_size <- round(
-    proportion_biased_cases * sample_size
+  # Check inputs
+  inputs <- add_wording_effects_errors(
+    lf_object,
+    proportion_negative, proportion_negative_range,
+    proportion_biased_cases,
+    proportion_biased_variables, proportion_biased_variables_range,
+    proportion_biased_person, proportion_biased_person_range
   )
 
-  # Obtain parameters from simulated data
-  parameters <- lf_object$parameters
-
-  # Check for percentage negative range
-  if(!is.null(proportion_negative_range)){
-    type_error(proportion_negative_range, "numeric") # object type error
-    length_error(proportion_negative_range, 2) # object length error
-
-    # Check for number of variables in range
-    if(any(proportion_negative_range > 1)){
-
-      # Target values
-      target_negative <- which(proportion_negative_range > 1)
-
-      # Ensure proportions
-      proportion_negative_range[target_negative] <-
-        proportion_negative_range[target_negative] / parameters$variables[target_negative]
-
-    }
-
-    # Check for error in range
-    range_error(proportion_negative_range, c(0, 1)) # object range error
-    proportion_negative <- runif(
-      parameters$factors,
-      min = min(proportion_negative_range),
-      max = max(proportion_negative_range)
-    )
-  }
-
-  # Ensure appropriate types
-  type_error(proportion_negative, "numeric");
-
-  # Ensure appropriate lengths
-  length_error(proportion_negative, c(1, parameters$factors));
-
-  # Set proportions
-  if(length(proportion_negative) == 1){
-    proportion_negative <- rep(proportion_negative, parameters$factors)
-  }
-
-  # Convert negative wording proportions to proportions
-  if(any(proportion_negative > 1)){
-
-    # Target values
-    target_negative <- which(proportion_negative > 1)
-
-    # Ensure proportions
-    proportion_negative[target_negative] <-
-      proportion_negative[target_negative] / parameters$variables[target_negative]
-
-  }
-
-  # Ensure appropriate ranges
-  range_error(proportion_negative, c(0, 1));
-
-  # Check for proportion variable range
-  if(!is.null(proportion_biased_variables_range)){
-    type_error(proportion_biased_variables_range, "numeric") # object type error
-    length_error(proportion_biased_variables_range, 2) # object length error
-
-    # Check for number of variables in range
-    if(any(proportion_biased_variables_range > 1)){
-
-      # Target values
-      target_variables <- which(proportion_biased_variables_range > 1)
-
-      # Ensure proportions
-      proportion_biased_variables_range[target_variables] <-
-        proportion_biased_variables_range[target_variables] / parameters$variables[target_variables]
-
-    }
-
-    # Check for error in range
-    range_error(proportion_biased_variables_range, c(0, 1)) # object range error
-    proportion_biased_variables <- runif(
-      parameters$factors,
-      min = min(proportion_biased_variables_range),
-      max = max(proportion_biased_variables_range)
-    )
-
-  }
-
-  # Ensure appropriate types
-  type_error(proportion_biased_variables, "numeric");
-
-  # Ensure appropriate length
-  length_error(proportion_biased_variables, c(1, parameters$factors))
-
-  # Set proportions
-  if(length(proportion_biased_variables) == 1){
-    proportion_biased_variables <- rep(proportion_biased_variables, parameters$factors)
-  }
-
-  # Convert negative wording proportions to proportions
-  if(any(proportion_biased_variables > 1)){
-
-    # Target values
-    target_variables <- which(proportion_biased_variables > 1)
-
-    # Ensure proportions
-    proportion_biased_variables[target_variables] <-
-      proportion_biased_variables[target_variables] / parameters$variables[target_variables]
-
-  }
-
-  # Ensure appropriate ranges
-  range_error(proportion_biased_variables, c(0, 1));
-
-  # Check for proportion variable range
-  if(!is.null(proportion_biased_person_range)){
-    type_error(proportion_biased_person_range, "numeric") # object type error
-    length_error(proportion_biased_person_range, 2) # object length error
-    range_error(proportion_biased_person_range, c(0, 1)) # object range error
-    proportion_biased_person <- runif(
-      biased_sample_size,
-      min = min(proportion_biased_person_range),
-      max = max(proportion_biased_person_range)
-    )
-  }
-
-  # Ensure appropriate types
-  type_error(proportion_biased_person, "numeric");
-
-  # Ensure appropriate length
-  length_error(proportion_biased_person, c(1, biased_sample_size))
-
-  # Set proportions
-  if(length(proportion_biased_person) == 1){
-    proportion_biased_person <- rep(proportion_biased_person, biased_sample_size)
-  }
-
-  # Ensure appropriate ranges
-  range_error(proportion_biased_person, c(0, 1));
+  # Collect inputs
+  parameters <- inputs$parameters
+  biased_sample_size <- inputs$biased_sample_size
+  proportion_negative <- inputs$proportion_negative
+  proportion_biased_variables <- inputs$proportion_biased_variables
+  proportion_biased_person <- inputs$proportion_biased_person
 
   # Obtain loadings
   loadings <- parameters$loadings
@@ -400,11 +229,15 @@ add_wording_effects <- function(
   variables <- parameters$variables
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(parameters$variables)
-  start_variables <- (end_variables + 1) - parameters$variables
+  variable_sequence <- factor_variable_sequence(parameters$variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
+
+  # Set factor sequence
+  factor_sequence <- seq_len(ncol(loadings))
 
   # Flip dominant loadings
-  for(i in 1:ncol(loadings)){
+  for(i in factor_sequence){
 
     # Obtain number of flipped variables
     negative_variables <- round(proportion_negative[i] * variables[i])
@@ -420,10 +253,10 @@ add_wording_effects <- function(
 
       # Set dominant loadings to inverse
       loadings[
-        target_loadings[1:negative_variables],
+        target_loadings[seq_len(negative_variables)],
         i
       ] <- -loadings[
-        target_loadings[1:negative_variables],
+        target_loadings[seq_len(negative_variables)],
         i
       ]
 
@@ -435,7 +268,7 @@ add_wording_effects <- function(
   signs <- numeric(nrow(loadings))
 
   # Ensure proper signs for skew
-  for(i in 1:ncol(loadings)){
+  for(i in factor_sequence){
 
     # Target dominant loadings
     target_loadings <- start_variables[i]:end_variables[i]
@@ -483,7 +316,7 @@ add_wording_effects <- function(
 
     # Split by method (ensures proper number of total biased sample)
     replacement_sample <- method[
-      as.numeric(cut(1:biased_sample_size, length(method)))
+      as.numeric(cut(seq_len(biased_sample_size), length(method)))
     ]
 
   }else{
@@ -599,6 +432,220 @@ add_wording_effects <- function(
 
 }
 
+# Input checking ----
+#' @noRd
+# Updated 12.07.2026
+add_wording_effects_errors <- function(
+    lf_object,
+    proportion_negative, proportion_negative_range,
+    proportion_biased_cases,
+    proportion_biased_variables, proportion_biased_variables_range,
+    proportion_biased_person, proportion_biased_person_range
+)
+{
+
+  # Check for appropriate class
+  if(!is(lf_object, "lf_simulate")){
+
+    # Produce error
+    stop(
+      paste(
+        "`lf_object` input is not class \"lf_simulate\" from the `simulate_factors` function.",
+        "\n\nInput class(es) of current `lf_object`:",
+        paste0("\"", class(lf_object), "\"", collapse = ", "),
+        "\n\nUse `simulate_factors` to generate your data to input into this function"
+      )
+    )
+
+  }
+
+  # Ensure data is categorical
+  if(any(lf_object$parameters$categories > 6)){
+
+    # Produce error
+    stop(
+      paste(
+        "Data input into `lf_object` must all be categorical (6 categories or less).",
+        "These variables were found to be continuous:",
+        paste(which(lf_object$parameters$categories > 6), collapse = ", ")
+      )
+    )
+
+  }
+
+  # Obtain number of cases
+  sample_size <- nrow(lf_object$data)
+
+  # Ensure appropriate methods
+  type_error(proportion_biased_cases, "numeric")
+
+  # Ensure appropriate lengths
+  length_error(proportion_biased_cases, 1)
+
+  # Convert biased cases to proportions
+  if(proportion_biased_cases > 1){
+    proportion_biased_cases <- proportion_biased_cases / sample_size
+  }
+
+  # Ensure appropriate ranges
+  range_error(proportion_biased_cases, c(0, 1))
+
+  # Obtain sample size
+  biased_sample_size <- round(
+    proportion_biased_cases * sample_size
+  )
+
+  # Obtain parameters from simulated data
+  parameters <- lf_object$parameters
+
+  # Check for percentage negative range
+  if(!is.null(proportion_negative_range)){
+    type_error(proportion_negative_range, "numeric") # object type error
+    length_error(proportion_negative_range, 2) # object length error
+
+    # Check for number of variables in range
+    if(any(proportion_negative_range > 1)){
+
+      # Target values (positions within the range vector,
+      # not factor indices, so use a single representative
+      # variable count rather than indexing `parameters$variables`)
+      target_negative <- which(proportion_negative_range > 1)
+
+      # Ensure proportions
+      proportion_negative_range[target_negative] <-
+        proportion_negative_range[target_negative] / mean(parameters$variables)
+
+    }
+
+    # Check for error in range
+    range_error(proportion_negative_range, c(0, 1)) # object range error
+    proportion_negative <- runif_xoshiro(
+      parameters$factors,
+      min = min(proportion_negative_range),
+      max = max(proportion_negative_range)
+    )
+  }
+
+  # Ensure appropriate types
+  type_error(proportion_negative, "numeric")
+
+  # Ensure appropriate lengths
+  length_error(proportion_negative, c(1, parameters$factors))
+
+  # Set proportions
+  if(length(proportion_negative) == 1){
+    proportion_negative <- rep(proportion_negative, parameters$factors)
+  }
+
+  # Convert negative wording proportions to proportions
+  if(any(proportion_negative > 1)){
+
+    # Target values
+    target_negative <- which(proportion_negative > 1)
+
+    # Ensure proportions
+    proportion_negative[target_negative] <-
+      proportion_negative[target_negative] / parameters$variables[target_negative]
+
+  }
+
+  # Ensure appropriate ranges
+  range_error(proportion_negative, c(0, 1))
+
+  # Check for proportion variable range
+  if(!is.null(proportion_biased_variables_range)){
+    type_error(proportion_biased_variables_range, "numeric") # object type error
+    length_error(proportion_biased_variables_range, 2) # object length error
+
+    # Check for number of variables in range
+    if(any(proportion_biased_variables_range > 1)){
+
+      # Target values (positions within the range vector,
+      # not factor indices, so use a single representative
+      # variable count rather than indexing `parameters$variables`)
+      target_variables <- which(proportion_biased_variables_range > 1)
+
+      # Ensure proportions
+      proportion_biased_variables_range[target_variables] <-
+        proportion_biased_variables_range[target_variables] / mean(parameters$variables)
+
+    }
+
+    # Check for error in range
+    range_error(proportion_biased_variables_range, c(0, 1)) # object range error
+    proportion_biased_variables <- runif_xoshiro(
+      parameters$factors,
+      min = min(proportion_biased_variables_range),
+      max = max(proportion_biased_variables_range)
+    )
+
+  }
+
+  # Ensure appropriate types
+  type_error(proportion_biased_variables, "numeric")
+
+  # Ensure appropriate length
+  length_error(proportion_biased_variables, c(1, parameters$factors))
+
+  # Set proportions
+  if(length(proportion_biased_variables) == 1){
+    proportion_biased_variables <- rep(proportion_biased_variables, parameters$factors)
+  }
+
+  # Convert negative wording proportions to proportions
+  if(any(proportion_biased_variables > 1)){
+
+    # Target values
+    target_variables <- which(proportion_biased_variables > 1)
+
+    # Ensure proportions
+    proportion_biased_variables[target_variables] <-
+      proportion_biased_variables[target_variables] / parameters$variables[target_variables]
+
+  }
+
+  # Ensure appropriate ranges
+  range_error(proportion_biased_variables, c(0, 1))
+
+  # Check for proportion variable range
+  if(!is.null(proportion_biased_person_range)){
+    type_error(proportion_biased_person_range, "numeric") # object type error
+    length_error(proportion_biased_person_range, 2) # object length error
+    range_error(proportion_biased_person_range, c(0, 1)) # object range error
+    proportion_biased_person <- runif_xoshiro(
+      biased_sample_size,
+      min = min(proportion_biased_person_range),
+      max = max(proportion_biased_person_range)
+    )
+  }
+
+  # Ensure appropriate types
+  type_error(proportion_biased_person, "numeric")
+
+  # Ensure appropriate length
+  length_error(proportion_biased_person, c(1, biased_sample_size))
+
+  # Set proportions
+  if(length(proportion_biased_person) == 1){
+    proportion_biased_person <- rep(proportion_biased_person, biased_sample_size)
+  }
+
+  # Ensure appropriate ranges
+  range_error(proportion_biased_person, c(0, 1))
+
+  # Return checked input
+  return(
+    list(
+      parameters = parameters,
+      biased_sample_size = biased_sample_size,
+      proportion_negative = proportion_negative,
+      proportion_biased_variables = proportion_biased_variables,
+      proportion_biased_person = proportion_biased_person
+    )
+  )
+
+}
+
 #' Adds acquiescence effects to simulated data from \code{\link[latentFactoR]{simulate_factors}}
 #'
 #' @param wording_data Matrix or data frame.
@@ -653,14 +700,15 @@ add_wording_acquiescence <- function(
 {
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(variables)
-  start_variables <- (end_variables + 1) - variables
+  variable_sequence <- factor_variable_sequence(variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
 
   # Initialize signs
   candidate_variables <- rep(FALSE, nrow(loadings))
 
   # Loop through each factor
-  for(i in 1:ncol(loadings)){
+  for(i in seq_len(ncol(loadings))){
 
     # Target variables
     target_variables <- start_variables[i]:end_variables[i]
@@ -672,7 +720,7 @@ add_wording_acquiescence <- function(
     if(number_recode != 0){
 
       # Determine variables for re-coding
-      recode_variables <- sample(
+      recode_variables <- shuffle(
         target_variables,
         number_recode
       )
@@ -704,10 +752,9 @@ add_wording_acquiescence <- function(
       person_bias <- round(sum(participant_candidate_variables) * proportion_biased_person[i])
 
       # Sample candidate variables
-      target_variables <- sample(
+      target_variables <- shuffle(
         which(participant_candidate_variables),
-        person_bias,
-        replace = FALSE
+        person_bias
       )
 
       # Target variable categories
@@ -779,14 +826,15 @@ add_wording_difficulty <- function(
 {
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(variables)
-  start_variables <- (end_variables + 1) - variables
+  variable_sequence <- factor_variable_sequence(variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
 
   # Initialize signs
   signs <- numeric(nrow(loadings))
 
   # Make all dominant loadings positive
-  for(i in 1:ncol(loadings)){
+  for(i in seq_len(ncol(loadings))){
 
     # Target dominant loadings
     target_loadings <- start_variables[i]:end_variables[i]
@@ -836,10 +884,9 @@ add_wording_difficulty <- function(
       participant <- replacement_data[i,]
 
       # Sample candidate variables
-      target_variables <- sample(
+      target_variables <- shuffle(
         which(candidate_variables),
-        person_bias[i],
-        replace = FALSE
+        person_bias[i]
       )
 
       # Target variable categories
@@ -911,14 +958,15 @@ add_wording_random_careless <- function(
 {
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(variables)
-  start_variables <- (end_variables + 1) - variables
+  variable_sequence <- factor_variable_sequence(variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
 
   # Initialize signs
   candidate_variables <- rep(FALSE, nrow(loadings))
 
   # Loop through each factor
-  for(i in 1:ncol(loadings)){
+  for(i in seq_len(ncol(loadings))){
 
     # Target variables
     target_variables <- start_variables[i]:end_variables[i]
@@ -930,7 +978,7 @@ add_wording_random_careless <- function(
     if(number_recode != 0){
 
       # Determine variables for re-coding
-      recode_variables <- sample(
+      recode_variables <- shuffle(
         target_variables,
         number_recode
       )
@@ -958,18 +1006,17 @@ add_wording_random_careless <- function(
       person_bias <- round(sum(candidate_variables) * proportion_biased_person[i])
 
       # Sample candidate variables
-      target_variables <- sample(
+      target_variables <- shuffle(
         which(candidate_variables),
-        person_bias,
-        replace = FALSE
+        person_bias
       )
 
       # Loop through variables
       for(recode in target_variables){
 
         # Insert random values
-        replacement_data[i, recode] <- sample(
-          1:categories[recode], 1
+        replacement_data[i, recode] <- shuffle(
+          seq_len(categories[recode]), 1
         )
 
       }
@@ -1036,14 +1083,15 @@ add_wording_straight_line <- function(
 {
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(variables)
-  start_variables <- (end_variables + 1) - variables
+  variable_sequence <- factor_variable_sequence(variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
 
   # Initialize signs
   candidate_variables <- rep(FALSE, nrow(loadings))
 
   # Loop through each factor
-  for(i in 1:ncol(loadings)){
+  for(i in seq_len(ncol(loadings))){
 
     # Target variables
     target_variables <- start_variables[i]:end_variables[i]
@@ -1055,7 +1103,7 @@ add_wording_straight_line <- function(
     if(number_recode != 0){
 
       # Determine variables for re-coding
-      recode_variables <- sample(
+      recode_variables <- shuffle(
         target_variables,
         number_recode
       )
@@ -1083,18 +1131,17 @@ add_wording_straight_line <- function(
       person_bias <- round(sum(candidate_variables) * proportion_biased_person[i])
 
       # Sample candidate variables
-      target_variables <- sample(
+      target_variables <- shuffle(
         which(candidate_variables),
-        person_bias,
-        replace = FALSE
+        person_bias
       )
 
       # Obtain max category
       maximum_category <- max(categories)
 
       # Draw random number from maximum category
-      random_category <- sample(
-        1:maximum_category, 1
+      random_category <- shuffle(
+        seq_len(maximum_category), 1
       )
 
       # Proportion of category

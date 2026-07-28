@@ -72,7 +72,7 @@
 #' @export
 #'
 # Add methods factors to simulated data ----
-# Updated 18.04.2024
+# Updated 12.07.2026
 add_method_factors <- function(
     lf_object,
     proportion_negative = 0.50,
@@ -108,58 +108,18 @@ add_method_factors <- function(
   if(missing(methods_correlations)){
     methods_correlations <- parameters$factor_correlations
     methods_correlations[] <- 1
-   }
-
-  # Check for methods correlations range
-  if(!is.null(methods_correlations_range)){
-    type_error(methods_correlations_range, "numeric") # object type error
-    length_error(methods_correlations_range, 2) # object length error
-    range_error(methods_correlations_range, c(-1, 1)) # object range error
-
-    # Initialize correlation matrix
-    methods_correlation_matrix <- matrix(
-      data = 0, nrow = parameters$factors, ncol = parameters$factors
-    )
-
-    # Population correlation matrix
-    methods_correlation_matrix[
-      lower.tri(methods_correlation_matrix)
-    ] <- runif(
-      sum(lower.tri(methods_correlation_matrix)),
-      min = min(methods_correlations_range),
-      max = max(methods_correlations_range)
-    )
-
-    # Make correlation matrix symmetric
-    methods_correlations <- methods_correlation_matrix + t(methods_correlation_matrix)
-
   }
 
-  # Ensure appropriate types
-  type_error(proportion_negative, "numeric")
+  # Check inputs
+  inputs <- add_method_factors_errors(
+    parameters,
+    proportion_negative, proportion_negative_range,
+    methods_correlations, methods_correlations_range
+  )
 
-  # Ensure appropriate lengths
-  length_error(proportion_negative, c(1, parameters$factors))
-
-  # Set proportions
-  if(length(proportion_negative) == 1){
-    proportion_negative <- rep(proportion_negative, parameters$factors)
-  }
-
-  # Convert negative wording proportions to proportions
-  if(any(proportion_negative > 1)){
-
-    # Target values
-    target_negative <- which(proportion_negative > 1)
-
-    # Ensure proportions
-    proportion_negative[target_negative] <-
-      proportion_negative[target_negative] / parameters$variables[target_negative]
-
-  }
-
-  # Ensure appropriate ranges
-  range_error(proportion_negative, c(0, 1));
+  # Collect inputs
+  proportion_negative <- inputs$proportion_negative
+  methods_correlations <- inputs$methods_correlations
 
   # Obtain substantive loadings
   loadings <- parameters$loadings
@@ -168,11 +128,15 @@ add_method_factors <- function(
   variables <- parameters$variables
 
   # Set sequence of variables for each factor
-  end_variables <- cumsum(parameters$variables)
-  start_variables <- (end_variables + 1) - parameters$variables
+  variable_sequence <- factor_variable_sequence(parameters$variables)
+  start_variables <- variable_sequence$start
+  end_variables <- variable_sequence$end
+
+  # Set factor sequence
+  factor_sequence <- seq_len(ncol(loadings))
 
   # Flip dominant loadings
-  for(i in 1:ncol(loadings)){
+  for(i in factor_sequence){
 
     # Obtain number of flipped variables
     negative_variables <- round(proportion_negative[i] * variables[i])
@@ -188,10 +152,10 @@ add_method_factors <- function(
 
       # Set dominant loadings to inverse
       loadings[
-        target_loadings[1:negative_variables],
+        target_loadings[seq_len(negative_variables)],
         i
       ] <- -loadings[
-        target_loadings[1:negative_variables],
+        target_loadings[seq_len(negative_variables)],
         i
       ]
 
@@ -203,7 +167,7 @@ add_method_factors <- function(
   signs <- numeric(nrow(loadings))
 
   # Ensure proper signs for skew
-  for(i in 1:ncol(loadings)){
+  for(i in factor_sequence){
 
     # Target dominant loadings
     target_loadings <- start_variables[i]:end_variables[i]
@@ -237,7 +201,7 @@ add_method_factors <- function(
 
     # Determine whether methods factors is not one
     if(methods_factors != 1){
-      methods_factors <- sample(parameters$factors, size = methods_factors)
+      methods_factors <- shuffle(seq_len(parameters$factors), size = methods_factors)
     }
 
   }
@@ -250,8 +214,27 @@ add_method_factors <- function(
   check_eigenvalues <- TRUE
   check_communalities <- TRUE
 
+  # Initialize iteration counter (guards against an infinite loop when the
+  # supplied structure leaves no randomness to escape an inadmissible
+  # solution, e.g. `methods_loadings`/`methods_correlations` are fixed matrices)
+  iterations <- 0
+  max_iterations <- 1000
+
   # Run through loop
   while(isTRUE(check_eigenvalues) | isTRUE(check_communalities)){
+
+    # Increment iteration counter and check against maximum
+    iterations <- iterations + 1
+    if(iterations > max_iterations){
+      stop(
+        paste0(
+          "Could not find an admissible (positive semi-definite) solution after ",
+          max_iterations, " attempts. The supplied `methods_loadings` and/or ",
+          "`methods_correlations` may be jointly inadmissible. Try relaxing fixed ",
+          "matrices into ranges or adjusting values"
+        )
+      )
+    }
 
     # Populate methods loadings matrix
     if(!is(methods_loadings, "matrix")){
@@ -264,10 +247,6 @@ add_method_factors <- function(
         0, nrow = loading_dimensions[1], ncol = loading_dimensions[2]
       )
 
-      # Create starting and ending of variable sequences
-      end_variables <- cumsum(variables)
-      start_variables <- (end_variables + 1) - variables
-
       # Identify dominant loadings
       if(length(methods_loadings) == 1){methods_loadings <- rep(methods_loadings, parameters$factors)}
       if(length(methods_loadings_range) == 1){methods_loadings_range <- rep(methods_loadings_range, parameters$factors)}
@@ -278,7 +257,7 @@ add_method_factors <- function(
         # Generate loadings from uniform distribution
         methods_loadings_matrix[
           start_variables[i]:end_variables[i], i # dominant loadings
-        ] <- runif(
+        ] <- runif_xoshiro(
           variables[i], # target variables
           min = methods_loadings[i] - methods_loadings_range[i] * 0.50,
           max = methods_loadings[i] + methods_loadings_range[i] * 0.50
@@ -338,7 +317,7 @@ add_method_factors <- function(
     diag(population_correlation) <- 1
 
     # Check eigenvalues
-    check_eigenvalues <- any(eigen(population_correlation)$values <= 0)
+    check_eigenvalues <- any(matrix_eigenvalues(population_correlation) <= 0)
 
   }
 
@@ -353,6 +332,9 @@ add_method_factors <- function(
 
   # Make data based on factor structure
   data <- data %*% cholesky
+
+  # Set data dimensions
+  dimensions <- dim(data)
 
   # Store continuous data
   continuous_data <- data
@@ -370,25 +352,18 @@ add_method_factors <- function(
   }
 
   # Check for categories greater than categorical limit and not infinite
-  if(any(variable_categories > parameters$categorical_limit & !is.infinite(variable_categories))){
-
-    # Make variables with categories greater than 7 (or categorical_limit) continuous
-    variable_categories[
-      variable_categories > parameters$categorical_limit & !is.infinite(variable_categories)
-    ] <- Inf
-
-  }
+  variable_categories <- mark_continuous_categories(variable_categories, parameters$categorical_limit)
 
   # Set skew/categories
   ## Target columns to categorize and/or add skew
   categorize_columns <- which(variable_categories <= parameters$categorical_limit)
-  continuous_columns <- setdiff(1:ncol(data), categorize_columns)
+  continuous_columns <- setdiff(seq_len(dimensions[2]), categorize_columns)
 
   # Store skew (bug fix for later use of `skew`)
   skew_stored <- parameters$skew
 
   # Initialize final skew
-  final_skew <- numeric(ncol(lf_object$data))
+  final_skew <- numeric(dimensions[2])
 
   ## Check for categories
   if(length(categorize_columns) != 0){
@@ -396,8 +371,8 @@ add_method_factors <- function(
     # Set skew
     if(length(skew_stored) == 1){
       skew <- rep(skew_stored, length(categorize_columns))
-    }else if(length(skew_stored) != ncol(data)){
-      skew <- sample(skew_stored, length(categorize_columns), replace = TRUE)
+    }else if(length(skew_stored) != dimensions[2]){
+      skew <- shuffle_replace(skew_stored, length(categorize_columns))
     }else{
       skew <- skew_stored
     }
@@ -442,8 +417,8 @@ add_method_factors <- function(
     # Set skew
     if(length(skew_stored) == 1){
       skew <- rep(skew_stored, length(continuous_columns))
-    }else if(length(skew_stored) != ncol(lf_object$data)){
-      skew <- sample(skew_stored, length(continuous_columns), replace = TRUE)
+    }else if(length(skew_stored) != dimensions[2]){
+      skew <- shuffle_replace(skew_stored, length(continuous_columns))
     }else{
       skew <- skew_stored
     }
@@ -452,8 +427,7 @@ add_method_factors <- function(
     for(i in seq_along(continuous_columns)){
 
       data[,continuous_columns[i]] <- skew_continuous( # function in `utils-latentFactoR`
-        skewness = skew[i],
-        data = data[,continuous_columns[i]]
+        skew = skew[i], data = data[,continuous_columns[i]]
       )
 
     }
@@ -465,11 +439,7 @@ add_method_factors <- function(
 
   # Add column names to data
   colnames(data) <- paste0(
-    "V", formatC(
-      x = 1:total_variables,
-      digits = floor(log10(total_variables)),
-      flag = "0", format = "d"
-    )
+    "V", format_integer(seq_len(total_variables), digits(total_variables) - 1)
   )
 
   # Update parameters
@@ -495,4 +465,101 @@ add_method_factors <- function(
 
 }
 
+# Input checking ----
+#' @noRd
+# Updated 12.07.2026
+add_method_factors_errors <- function(
+    parameters,
+    proportion_negative, proportion_negative_range = NULL,
+    methods_correlations, methods_correlations_range = NULL
+)
+{
 
+  # Check for methods correlations range
+  if(!is.null(methods_correlations_range)){
+    type_error(methods_correlations_range, "numeric") # object type error
+    length_error(methods_correlations_range, 2) # object length error
+    range_error(methods_correlations_range, c(-1, 1)) # object range error
+
+    # Initialize correlation matrix
+    methods_correlation_matrix <- matrix(
+      data = 0, nrow = parameters$factors, ncol = parameters$factors
+    )
+
+    # Population correlation matrix
+    methods_correlation_matrix[
+      lower.tri(methods_correlation_matrix)
+    ] <- runif_xoshiro(
+      sum(lower.tri(methods_correlation_matrix)),
+      min = min(methods_correlations_range),
+      max = max(methods_correlations_range)
+    )
+
+    # Make correlation matrix symmetric
+    methods_correlations <- methods_correlation_matrix + t(methods_correlation_matrix)
+
+  }
+
+  # Check for proportion negative range
+  if(!is.null(proportion_negative_range)){
+    type_error(proportion_negative_range, "numeric") # object type error
+    length_error(proportion_negative_range, 2) # object length error
+
+    # Check for number of variables in range
+    if(any(proportion_negative_range > 1)){
+
+      # Target values (positions within the range vector,
+      # not factor indices, so use a single representative
+      # variable count rather than indexing `parameters$variables`)
+      target_negative <- which(proportion_negative_range > 1)
+
+      # Ensure proportions
+      proportion_negative_range[target_negative] <-
+        proportion_negative_range[target_negative] / mean(parameters$variables)
+
+    }
+
+    # Check for error in range
+    range_error(proportion_negative_range, c(0, 1)) # object range error
+    proportion_negative <- runif_xoshiro(
+      parameters$factors,
+      min = min(proportion_negative_range),
+      max = max(proportion_negative_range)
+    )
+  }
+
+  # Ensure appropriate types
+  type_error(proportion_negative, "numeric")
+
+  # Ensure appropriate lengths
+  length_error(proportion_negative, c(1, parameters$factors))
+
+  # Set proportions
+  if(length(proportion_negative) == 1){
+    proportion_negative <- rep(proportion_negative, parameters$factors)
+  }
+
+  # Convert negative wording proportions to proportions
+  if(any(proportion_negative > 1)){
+
+    # Target values
+    target_negative <- which(proportion_negative > 1)
+
+    # Ensure proportions
+    proportion_negative[target_negative] <-
+      proportion_negative[target_negative] / parameters$variables[target_negative]
+
+  }
+
+  # Ensure appropriate ranges
+  range_error(proportion_negative, c(0, 1))
+
+  # Return checked input
+  return(
+    list(
+      proportion_negative = proportion_negative,
+      methods_correlations = methods_correlations
+    )
+  )
+
+}
